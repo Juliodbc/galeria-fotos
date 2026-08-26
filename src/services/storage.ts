@@ -1,12 +1,38 @@
-import { Preferences } from '@capacitor/preferences';
-export interface User { name: string; email: string; password: string }
-export interface Photo { id: string; dataUrl: string; createdAt: string }
-const USER = 'foco:user'; const SESSION = 'foco:session';
-export async function register(user: User) { await Preferences.set({ key: USER, value: JSON.stringify(user) }); }
-export async function login(email: string, password: string) { const value = (await Preferences.get({ key: USER })).value; const user = value ? JSON.parse(value) as User : null; if (!user || user.email.toLowerCase() !== email.toLowerCase() || user.password !== password) return false; await Preferences.set({ key: SESSION, value: user.email }); return true; }
-export async function logout() { await Preferences.remove({ key: SESSION }); }
-export async function isAuthenticated() { return Boolean((await Preferences.get({ key: SESSION })).value); }
-async function photoKey() { return `foco:photos:${(await Preferences.get({ key: SESSION })).value ?? 'none'}`; }
-export async function getPhotos(): Promise<Photo[]> { const value = (await Preferences.get({ key: await photoKey() })).value; return value ? JSON.parse(value) as Photo[] : []; }
-export async function addPhoto(dataUrl: string) { const photos = await getPhotos(); photos.unshift({ id: crypto.randomUUID(), dataUrl, createdAt: new Date().toISOString() }); await Preferences.set({ key: await photoKey(), value: JSON.stringify(photos) }); return photos; }
-export async function removePhoto(id: string) { const photos = (await getPhotos()).filter(p => p.id !== id); await Preferences.set({ key: await photoKey(), value: JSON.stringify(photos) }); return photos; }
+import { authService } from '@/app/services/auth.service';
+import { photoService } from '@/app/services/photo.service';
+import type { User, RegisterPayload } from '@/app/models/user';
+import type { Photo } from '@/app/models/photo';
+
+export type { User, RegisterPayload } from '@/app/models/user';
+export type { Photo } from '@/app/models/photo';
+export { authService } from '@/app/services/auth.service';
+export { photoService } from '@/app/services/photo.service';
+
+export async function register(user: { name: string; email: string; password: string }): Promise<void> {
+  await authService.register(user);
+}
+
+export async function login(email: string, password: string): Promise<boolean> {
+  const user = await authService.login(email, password);
+  return Boolean(user);
+}
+
+export async function logout(): Promise<void> {
+  await authService.logout();
+}
+
+export async function isAuthenticated(): Promise<boolean> {
+  return authService.isAuthenticated();
+}
+
+export async function getPhotos(): Promise<Photo[]> {
+  return photoService.list();
+}
+
+export async function addPhoto(dataUrl: string): Promise<Photo[]> {
+  return photoService.add(dataUrl);
+}
+
+export async function removePhoto(id: string): Promise<Photo[]> {
+  return photoService.remove(id);
+}

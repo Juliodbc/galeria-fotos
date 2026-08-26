@@ -1,43 +1,51 @@
 import { createRouter, createWebHistory } from '@ionic/vue-router';
-import { RouteRecordRaw } from 'vue-router';
-import TabsPage from '../views/TabsPage.vue'
-import { isAuthenticated } from '../services/storage';
+import type { RouteRecordRaw } from 'vue-router';
+import TabsPage from '@/views/TabsPage.vue';
+import { authGuard } from '@/app/core/guards/auth.guard';
 
 const routes: Array<RouteRecordRaw> = [
   {
     path: '/',
-    redirect: '/login'
+    redirect: '/login',
   },
   {
     path: '/tabs/',
     component: TabsPage,
+    meta: { requiresAuth: true },
     children: [
       {
         path: '',
-        redirect: '/tabs/home'
+        redirect: '/tabs/home',
       },
       {
         path: 'home',
-        component: () => import('@/views/HomePage.vue')
+        component: () => import('@/views/HomePage.vue'),
+        meta: { requiresAuth: true },
       },
       {
         path: 'sobre',
-        component: () => import('@/views/AboutPage.vue')
+        component: () => import('@/views/AboutPage.vue'),
+        meta: { requiresAuth: true },
       },
-    ]
+    ],
   },
-  { path: '/login', component: () => import('@/views/LoginPage.vue') },
-  { path: '/cadastro', component: () => import('@/views/RegisterPage.vue') },
-]
+  {
+    path: '/login',
+    component: () => import('@/views/LoginPage.vue'),
+    meta: { guestOnly: true },
+  },
+  {
+    path: '/cadastro',
+    component: () => import('@/views/RegisterPage.vue'),
+    meta: { guestOnly: true },
+  },
+];
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
-})
-router.beforeEach(async (to) => {
-  if (to.path.startsWith('/tabs') && !(await isAuthenticated())) return '/login';
-  if ((to.path === '/login' || to.path === '/cadastro') && await isAuthenticated()) return '/tabs/home';
-  return true;
+  routes,
 });
 
-export default router
+router.beforeEach(authGuard);
+
+export default router;
