@@ -119,3 +119,6 @@ if (locationPerm.location !== 'granted') {
 - Fotos e sessão ficam armazenadas localmente no dispositivo.
 - O acesso a Home e Sobre só é liberado após login ativo.
 - O projeto foi estruturado para facilitar manutenção, extensão e apresentação acadêmica.
+
+
+TESTE !
