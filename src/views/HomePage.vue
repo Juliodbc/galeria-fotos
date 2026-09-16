@@ -3,7 +3,12 @@
     <ion-header class="glass">
       <ion-toolbar>
         <ion-title><span>f</span> foco</ion-title>
-        <ion-button slot="end" fill="clear" @click="leave">
+
+        <ion-button slot="end" fill="clear" @click="handleToggleTheme" aria-label="Alternar tema">
+          <ion-icon :icon="isDarkMode ? sunnyOutline : moonOutline" />
+        </ion-button>
+
+        <ion-button slot="end" fill="clear" @click="leave" aria-label="Sair da conta">
           <ion-icon :icon="logOutOutline" />
         </ion-button>
       </ion-toolbar>
@@ -18,20 +23,20 @@
 
         <div class="count">
           <b>{{ photos.length }}</b>
-          <span>{{ photos.length === 1 ? 'foto' : 'fotos' }}</span>
+          <span>{{ photos.length === 1 ? "foto" : "fotos" }}</span>
+          <small v-if="!isOnline">offline</small>
         </div>
       </section>
 
       <ion-grid v-if="photos.length" class="gallery">
         <ion-row>
           <ion-col size="6" v-for="(photo, index) in photos" :key="photo.id">
-            <article :class="{ featured: index === 0 }">
-              <img :src="photo.dataUrl" alt="Foto salva" />
-              <div class="shade" />
-              <ion-button fill="clear" class="trash" @click="remove(photo.id)">
-                <ion-icon :icon="trashOutline" />
-              </ion-button>
-            </article>
+            <PhotoCard
+              :photo="photo"
+              :alt-text="index === 0 ? 'Foto em destaque' : 'Foto salva'"
+              @share="sharePhoto"
+              @remove="remove"
+            />
           </ion-col>
         </ion-row>
       </ion-grid>
@@ -54,12 +59,15 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
+import { ref } from "vue";
+import { useRouter } from "vue-router";
+import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
+import { Geolocation } from "@capacitor/geolocation";
+import { Share } from "@capacitor/share";
 import {
   actionSheetController,
   alertController,
+  onIonViewWillEnter,
   toastController,
   IonButton,
   IonCol,
@@ -73,51 +81,119 @@ import {
   IonRow,
   IonTitle,
   IonToolbar,
-} from '@ionic/vue';
-import { addOutline, imagesOutline, logOutOutline, trashOutline } from 'ionicons/icons';
-import { addPhoto, getPhotos, logout, removePhoto, type Photo } from '@/services/storage';
+} from "@ionic/vue";
+import {
+  addOutline,
+  imagesOutline,
+  logOutOutline,
+  moonOutline,
+  sunnyOutline,
+} from "ionicons/icons";
+import { useTheme } from "@/composables/useTheme";
+import { useNetwork } from "@/composables/useNetwork";
+import PhotoCard from "@/components/PhotoCard.vue";
+import { addPhoto, getPhotos, logout, removePhoto, type Photo } from "@/services/storage";
 
 const photos = ref<Photo[]>([]);
 const router = useRouter();
+const { isDarkMode, toggleTheme } = useTheme();
+const { isOnline } = useNetwork();
 
-onMounted(async () => {
-  photos.value = await getPhotos();
-});
+async function mostrarToast(
+  message: string,
+  color: "success" | "danger" | "warning",
+): Promise<void> {
+  const toast = await toastController.create({
+    message,
+    color,
+    duration: 2200,
+    position: "bottom",
+  });
+
+  await toast.present();
+}
+
+async function carregarFotos(): Promise<void> {
+  try {
+    photos.value = await getPhotos();
+  } catch {
+    photos.value = [];
+    await mostrarToast("Não foi possível carregar as fotos", "danger");
+  }
+}
+
+onIonViewWillEnter(carregarFotos);
+
+async function handleToggleTheme(): Promise<void> {
+  await toggleTheme();
+}
 
 async function pick(): Promise<void> {
   const sheet = await actionSheetController.create({
-    header: 'Nova memória',
-    subHeader: 'Como você quer adicionar?',
+    header: "Nova memória",
+    subHeader: "Como você quer adicionar?",
     buttons: [
-      { text: 'Tirar uma foto', icon: 'camera-outline', handler: () => void capture(CameraSource.Camera) },
-      { text: 'Escolher da galeria', icon: 'images-outline', handler: () => void capture(CameraSource.Photos) },
-      { text: 'Cancelar', role: 'cancel' },
+      {
+        text: "Tirar uma foto",
+        icon: "camera-outline",
+        handler: () => void capture(CameraSource.Camera),
+      },
+      {
+        text: "Escolher da galeria",
+        icon: "images-outline",
+        handler: () => void capture(CameraSource.Photos),
+      },
+      { text: "Cancelar", role: "cancel" },
     ],
   });
 
   await sheet.present();
 }
 
-async function showPermissionNotice(): Promise<void> {
+async function showPermissionNotice(message: string): Promise<void> {
   const toast = await toastController.create({
-    message: 'A permissão para câmera e fotos é necessária para adicionar memórias.',
+    message,
     duration: 3500,
-    color: 'warning',
-    position: 'bottom',
+    color: "warning",
+    position: "bottom",
   });
 
   await toast.present();
+}
+
+async function getLocationMetadata(): Promise<Partial<Photo> | undefined> {
+  const permission = await Geolocation.checkPermissions();
+
+  if (permission.location !== "granted") {
+    const requested = await Geolocation.requestPermissions();
+    if (requested.location !== "granted") {
+      await showPermissionNotice("A localização foi descartada. Sua foto será salva sem coordenadas.");
+      return undefined;
+    }
+  }
+
+  try {
+    const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true });
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      altitude: position.coords.altitude ?? null,
+    };
+  } catch {
+    await showPermissionNotice("Não foi possível obter sua localização agora, mas a foto foi salva normalmente.");
+    return undefined;
+  }
 }
 
 async function capture(source: CameraSource): Promise<void> {
   try {
     const permission = await Camera.checkPermissions();
 
-    if (permission.camera !== 'granted' || permission.photos !== 'granted') {
+    if (permission.camera !== "granted" || permission.photos !== "granted") {
       const requested = await Camera.requestPermissions();
 
-      if (requested.camera !== 'granted' || requested.photos !== 'granted') {
-        await showPermissionNotice();
+      if (requested.camera !== "granted" || requested.photos !== "granted") {
+        await showPermissionNotice("A permissão para câmera e fotos é necessária para adicionar memórias.");
         return;
       }
     }
@@ -130,26 +206,47 @@ async function capture(source: CameraSource): Promise<void> {
     });
 
     if (image.dataUrl) {
-      photos.value = await addPhoto(image.dataUrl);
+      const metadata = await getLocationMetadata();
+      photos.value = await addPhoto(image.dataUrl, metadata);
+      await mostrarToast("Foto salva com sucesso", "success");
     }
   } catch (error) {
-    if (error instanceof Error && !/cancel/i.test(error.message)) {
-      await showPermissionNotice();
+    if (error instanceof Error && /cancel/i.test(error.message)) {
+      return;
     }
+
+    await mostrarToast("Não foi possível salvar a foto", "danger");
+  }
+}
+
+async function sharePhoto(photo: Photo): Promise<void> {
+  try {
+    await Share.share({
+      title: "Minha memória",
+      text: "Confira esta foto da minha galeria.",
+      url: photo.dataUrl,
+    });
+  } catch {
+    await mostrarToast("Não foi possível compartilhar esta foto", "danger");
   }
 }
 
 async function remove(id: string): Promise<void> {
   const alert = await alertController.create({
-    header: 'Remover esta memória?',
-    message: 'A foto será apagada da sua galeria.',
+    header: "Remover esta memória?",
+    message: "A foto será apagada da sua galeria.",
     buttons: [
-      { text: 'Manter', role: 'cancel' },
+      { text: "Manter", role: "cancel" },
       {
-        text: 'Remover',
-        role: 'destructive',
+        text: "Remover",
+        role: "destructive",
         handler: async () => {
-          photos.value = await removePhoto(id);
+          try {
+            photos.value = await removePhoto(id);
+            await mostrarToast("Foto excluída com sucesso", "success");
+          } catch {
+            await mostrarToast("Não foi possível excluir a foto", "danger");
+          }
         },
       },
     ],
@@ -160,15 +257,21 @@ async function remove(id: string): Promise<void> {
 
 async function leave(): Promise<void> {
   await logout();
-  await router.replace('/login');
+  await router.replace("/login");
 }
 </script>
 
 <style scoped>
 .glass ion-toolbar {
-  --background: rgba(246, 245, 255, 0.78);
+  --background: rgba(255, 255, 255, 0.7);
   --border-style: none;
-  backdrop-filter: blur(15px);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 22px rgba(58, 49, 120, 0.08);
+}
+
+body.dark .glass ion-toolbar {
+  --background: rgba(24, 25, 38, 0.78);
+  box-shadow: none;
 }
 
 ion-title {
@@ -177,37 +280,47 @@ ion-title {
   color: #20203a;
 }
 
+body.dark ion-title {
+  color: #edf1ff;
+}
+
 ion-title span {
   display: inline-grid;
   place-items: center;
-  width: 23px;
-  height: 23px;
+  width: 24px;
+  height: 24px;
   border-radius: 8px;
-  background: #6857e8;
+  background: linear-gradient(135deg, #7f6afc, #5846e4);
   color: white;
   margin-right: 4px;
+  box-shadow: 0 8px 18px rgba(104, 87, 232, 0.35);
 }
 
 .hero {
   display: flex;
   justify-content: space-between;
   align-items: end;
-  padding: 38px 23px 21px;
+  padding: 34px 22px 18px;
 }
 
 .hero p {
   margin: 0;
   color: #6857e8;
-  letter-spacing: 1.4px;
+  letter-spacing: 1.5px;
   font-weight: 800;
   font-size: 10px;
 }
 
 .hero h1 {
   margin: 7px 0 0;
-  font-size: 37px;
-  line-height: 0.93;
+  font-size: clamp(2.2rem, 6vw, 3.1rem);
+  line-height: 0.94;
   letter-spacing: -2px;
+  color: #1d1d34;
+}
+
+body.dark .hero h1 {
+  color: #edf1ff;
 }
 
 .hero h1 em {
@@ -219,17 +332,29 @@ ion-title span {
 .count {
   text-align: right;
   color: #777895;
+  padding-bottom: 4px;
 }
 
 .count b {
   display: block;
-  font-size: 27px;
+  font-size: 28px;
   color: #20203a;
   line-height: 1;
 }
 
-.count span {
-  font-size: 11px;
+.count span,
+.count small {
+  display: block;
+}
+
+.count small {
+  margin-top: 2px;
+  color: #b24d4d;
+  font-weight: 700;
+}
+
+body.dark .count b {
+  color: #edf1ff;
 }
 
 .gallery {
@@ -237,67 +362,39 @@ ion-title span {
 }
 
 .gallery ion-col {
-  padding: 5px;
-}
-
-article {
-  position: relative;
-  aspect-ratio: 0.88;
-  overflow: hidden;
-  border-radius: 21px;
-  background: #e7e5f6;
-  box-shadow: 0 10px 22px rgba(37, 29, 92, 0.1);
-}
-
-article.featured {
-  border-radius: 21px 21px 21px 8px;
-}
-
-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.shade {
-  position: absolute;
-  inset: 55% 0 0;
-  background: linear-gradient(transparent, rgba(20, 16, 48, 0.36));
-}
-
-.trash {
-  position: absolute;
-  right: 1px;
-  top: 1px;
-  --color: #fff;
-  --background: rgba(21, 16, 45, 0.27);
-  --border-radius: 50%;
+  padding: 6px;
 }
 
 .empty {
   text-align: center;
-  padding: 62px 36px;
+  padding: 56px 26px 80px;
 }
 
 .empty-art {
-  width: 105px;
-  height: 105px;
+  width: 110px;
+  height: 110px;
   margin: auto;
   display: grid;
   place-items: center;
-  border-radius: 35px 35px 35px 10px;
-  background: #e7e3ff;
+  border-radius: 34px 34px 34px 12px;
+  background: linear-gradient(135deg, #efeaff, #dfd5ff);
   color: #6857e8;
+  box-shadow: 0 18px 28px rgba(104, 87, 232, 0.12);
 }
 
 .empty-art ion-icon {
-  font-size: 49px;
+  font-size: 50px;
 }
 
 .empty h2 {
   letter-spacing: -1px;
-  margin: 23px 0 8px;
+  margin: 22px 0 9px;
   color: #20203a;
+}
+
+body.dark .empty h2,
+body.dark .empty p {
+  color: #edf1ff;
 }
 
 .empty p {
@@ -307,8 +404,7 @@ img {
 }
 
 .ion-fab-button {
-  --background: #6857e8;
-  --box-shadow: 0 12px 24px rgba(104, 87, 232, 0.4);
+  --background: linear-gradient(135deg, #7f6afc, #5846e4);
+  --box-shadow: 0 16px 28px rgba(104, 87, 232, 0.38);
 }
 </style>
-

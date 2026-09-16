@@ -1,2 +1,64 @@
-﻿:root { --ion-color-primary:#6857e8; --ion-color-primary-rgb:104,87,232; --ion-color-primary-contrast:#fff; --ion-color-primary-shade:#5c4cd0; --ion-color-primary-tint:#7768eb; --ink:#20203a; --muted:#777895; --canvas:#f6f5ff; }
-body { background: var(--canvas); color: var(--ink); }
+﻿:root {
+  --ion-color-primary: #6857e8;
+  --ion-color-primary-rgb: 104, 87, 232;
+  --ion-color-primary-contrast: #fff;
+  --ion-color-primary-shade: #5c4cd0;
+  --ion-color-primary-tint: #7768eb;
+  --ion-font-family: "Inter", "Segoe UI", sans-serif;
+  --ink: #20203a;
+  --muted: #777895;
+  --canvas: #f6f5ff;
+  --canvas-strong: #efeaff;
+  --surface: #ffffff;
+  --surface-alt: #efeaff;
+  --surface-soft: rgba(255, 255, 255, 0.8);
+  --line: #e9e5fb;
+  --glow: rgba(104, 87, 232, 0.18);
+}
+
+html {
+  background: var(--canvas);
+}
+
+body {
+  background:
+    radial-gradient(circle at top left, rgba(127, 106, 252, 0.12), transparent 28%),
+    linear-gradient(180deg, #f9f8ff 0%, var(--canvas) 100%);
+  color: var(--ink);
+}
+
+body.dark {
+  --ion-background-color: #12131e;
+  --ion-background-color-rgb: 18, 19, 30;
+  --ion-text-color: #eff2ff;
+  --ion-toolbar-background: #1a1b2a;
+  --ion-color-step-50: #1f2030;
+  --canvas: #12131e;
+  --canvas-strong: #1b1d2d;
+  --surface: #1c1e2d;
+  --surface-alt: #24273b;
+  --surface-soft: rgba(28, 30, 45, 0.82);
+  --line: rgba(255, 255, 255, 0.06);
+  --ink: #eef1ff;
+  --muted: #b4b8d3;
+  --glow: rgba(127, 106, 252, 0.22);
+}
+
+body.dark ion-page,
+body.dark ion-content,
+body.dark ion-toolbar,
+body.dark ion-tab-bar,
+body.dark ion-item,
+body.dark .auth-card,
+body.dark .gallery article,
+body.dark .empty-art,
+body.dark .info-card,
+body.dark .coords-grid div,
+body.dark ion-accordion {
+  background: var(--surface);
+}
+
+body.dark .auth-page,
+body.dark .about-page {
+  background: linear-gradient(180deg, #12141f 0%, #17192a 100%);
+}

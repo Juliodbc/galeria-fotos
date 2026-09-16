@@ -29,8 +29,8 @@ export async function getPhotos(): Promise<Photo[]> {
   return photoService.list();
 }
 
-export async function addPhoto(dataUrl: string): Promise<Photo[]> {
-  return photoService.add(dataUrl);
+export async function addPhoto(dataUrl: string, metadata?: Partial<Photo>): Promise<Photo[]> {
+  return photoService.add(dataUrl, metadata);
 }
 
 export async function removePhoto(id: string): Promise<Photo[]> {

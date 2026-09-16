@@ -1,65 +1,101 @@
+import { Directory, Filesystem } from '@capacitor/filesystem';
 import { Preferences } from '@capacitor/preferences';
 import type { Photo } from '@/app/models/photo';
-import { authService } from './auth.service';
 
-/**
- * Mantém a coleção de fotos separada por usuário logado.
- * O armazenamento é individual por e-mail para evitar misturar registros entre contas.
- */
 class PhotoService {
-  private static readonly PHOTOS_PREFIX = 'galeria-fotos:photos:';
+  private static readonly PHOTO_META_KEY = 'galeria-fotos:photo-meta';
 
-  private parsePhotos(value: string | null): Photo[] {
-    if (!value) {
-      return [];
+  private async getMetadataMap(): Promise<Record<string, Partial<Photo>>> {
+    const result = await Preferences.get({ key: PhotoService.PHOTO_META_KEY });
+
+    if (!result.value) {
+      return {};
     }
 
     try {
-      const parsed = JSON.parse(value) as Photo[];
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed = JSON.parse(result.value) as Record<string, Partial<Photo>>;
+      return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
-      return [];
+      return {};
     }
   }
 
-  private async getPhotosKey(): Promise<string> {
-    const email = await authService.getSessionEmail();
-
-    if (!email) {
-      throw new Error('Sessão de usuário não encontrada.');
-    }
-
-    return `${PhotoService.PHOTOS_PREFIX}${email.toLowerCase()}`;
+  private async persistMetadataMap(metadata: Record<string, Partial<Photo>>): Promise<void> {
+    await Preferences.set({
+      key: PhotoService.PHOTO_META_KEY,
+      value: JSON.stringify(metadata),
+    });
   }
 
   async list(): Promise<Photo[]> {
-    const key = await this.getPhotosKey();
-    const result = await Preferences.get({ key });
-    return this.parsePhotos(result.value);
+    const { files } = await Filesystem.readdir({
+      directory: Directory.Data,
+      path: '',
+    });
+    const metadataMap = await this.getMetadataMap();
+    const photoFiles = files
+      .filter((file) => file.name.startsWith('foto-') && file.name.endsWith('.jpg'))
+      .sort((first, second) => second.name.localeCompare(first.name));
+
+    return Promise.all(
+      photoFiles.map(async (file) => {
+        const result = await Filesystem.readFile({
+          directory: Directory.Data,
+          path: file.name,
+        });
+        const data = typeof result.data === 'string' ? result.data : '';
+        const metadata = metadataMap[file.name] ?? {};
+
+        return {
+          id: file.name,
+          dataUrl: `data:image/jpeg;base64,${data}`,
+          createdAt: file.mtime ? new Date(file.mtime).toISOString() : new Date().toISOString(),
+          latitude: metadata.latitude,
+          longitude: metadata.longitude,
+          altitude: metadata.altitude ?? null,
+        };
+      }),
+    );
   }
 
-  async add(dataUrl: string): Promise<Photo[]> {
-    const key = await this.getPhotosKey();
-    const photos = await this.list();
+  async add(dataUrl: string, metadata?: Partial<Photo>): Promise<Photo[]> {
+    const base64Data = dataUrl.split(',')[1];
 
-    const photo: Photo = {
-      id: crypto.randomUUID(),
-      dataUrl,
-      createdAt: new Date().toISOString(),
-    };
+    if (!base64Data) {
+      throw new Error('Dados da imagem inválidos.');
+    }
 
-    const nextPhotos = [photo, ...photos];
-    await Preferences.set({ key, value: JSON.stringify(nextPhotos) });
-    return nextPhotos;
+    const name = `foto-${Date.now()}-${crypto.randomUUID()}.jpg`;
+    await Filesystem.writeFile({
+      directory: Directory.Data,
+      path: name,
+      data: base64Data,
+    });
+
+    if (metadata && (metadata.latitude !== undefined || metadata.longitude !== undefined || metadata.altitude !== undefined)) {
+      const metadataMap = await this.getMetadataMap();
+      metadataMap[name] = {
+        latitude: metadata.latitude,
+        longitude: metadata.longitude,
+        altitude: metadata.altitude,
+      };
+      await this.persistMetadataMap(metadataMap);
+    }
+
+    return this.list();
   }
 
   async remove(id: string): Promise<Photo[]> {
-    const key = await this.getPhotosKey();
-    const photos = await this.list();
-    const nextPhotos = photos.filter((photo) => photo.id !== id);
+    const metadataMap = await this.getMetadataMap();
+    delete metadataMap[id];
+    await this.persistMetadataMap(metadataMap);
 
-    await Preferences.set({ key, value: JSON.stringify(nextPhotos) });
-    return nextPhotos;
+    await Filesystem.deleteFile({
+      directory: Directory.Data,
+      path: id,
+    });
+
+    return this.list();
   }
 }
 
